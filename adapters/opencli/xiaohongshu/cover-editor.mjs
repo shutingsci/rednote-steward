@@ -45,7 +45,11 @@ export async function applyCover(page, cover) {
   }`)), 10_000, 400, 'custom cover editor');
   const selector = await page.evaluate(`() => {
     const dialogs = Array.from(document.querySelectorAll('[role="dialog"], .d-modal, [class*="cover-dialog"], [class*="cover-modal"]')).filter(el => el.offsetParent !== null);
-    const inputs = dialogs.flatMap(el => Array.from(el.querySelectorAll('input[type="file"]'))).filter(el => /image|\\.jpg|\\.png/i.test(el.accept));
+    const inputs = dialogs.flatMap(el => Array.from(el.querySelectorAll('input[type="file"]')))
+      .filter(el => /image|\\.jpg|\\.png/i.test(el.accept))
+      // PK candidate covers use a separate list input and do not replace the
+      // note's main cover. Ignore it when selecting the single main-cover control.
+      .filter(el => !el.classList.contains('pk-cover-list-file-input'));
     if (inputs.length !== 1) return '';
     inputs[0].setAttribute('data-rednote-cover-input', 'true');
     return 'input[data-rednote-cover-input="true"]';

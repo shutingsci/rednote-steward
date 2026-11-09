@@ -56,10 +56,12 @@ test('unknown upload failure never retries attachment', async () => {
 test('custom cover opens from a hovered preview and verifies the saved cover source', async () => {
   let uploads = 0, closed = false;
   let hovered = false;
+  const evaluatedSources = [];
   const page = {
     wait: async () => {},
     hover: async () => { hovered = true; },
     evaluate: async source => {
+      evaluatedSources.push(source);
       if (source.includes('const preview = Array.from')) {
         return '[data-steward-cover-preview="true"]';
       }
@@ -93,6 +95,7 @@ test('custom cover opens from a hovered preview and verifies the saved cover sou
   assert.match(result.source, /new-cover/);
   assert.equal(uploads, 1);
   assert.equal(closed, true);
+  assert.ok(evaluatedSources.some(source => source.includes('pk-cover-list-file-input')));
 });
 
 test('prepare-only returns the observed composer without invoking submission', async t => {
