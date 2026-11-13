@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { applyCover } from '../adapters/opencli/xiaohongshu/cover-editor.mjs';
 
 function coverPage(options = {}) {
-  const observed = { uploads: 0, confirmations: 0, outsideClicks: 0, hovered: false, delayedCloses: 0, entryClicks: 0 };
+  const observed = { uploads: 0, confirmations: 0, outsideClicks: 0, hovered: false, entryActivations: 0 };
   let opened = false;
   let closed = false;
   let inputRemoved = false;
@@ -24,13 +24,26 @@ function coverPage(options = {}) {
   const input = node({ accept: 'image/png,image/jpeg', files: [], closest: () => dialog });
   const button = node({ innerText: '完成', disabled: Boolean(options.disabled), click() {
     observed.confirmations++;
-    if (options.delayedClose) observed.delayedCloses++;
-    else closed = true;
     preview.style.backgroundImage = options.unquoted
       ? 'url(https://example.invalid/selected.jpg?token=new)'
       : 'url("https://example.invalid/selected.jpg?token=new")';
   } });
   if (options.ariaDisabled) button.attributes['aria-disabled'] = 'true';
+  const entryText = node({
+    getBoundingClientRect: () => ({ left: 10, top: 20, width: 80, height: 30 }),
+    dispatchEvent: () => {
+      observed.entryActivations++;
+      opened = true;
+    },
+  });
+  const entry = node({
+    querySelector: selector => selector === '.cover-edit-entry-text' ? entryText : null,
+    getBoundingClientRect: () => ({ left: 10, top: 20, width: 80, height: 30 }),
+    dispatchEvent: () => {
+      observed.entryActivations++;
+      opened = true;
+    },
+  });
   const dialog = node({
     get offsetParent() { return opened && !closed ? {} : null; },
     contains: el => !inputRemoved && el === input,
@@ -54,13 +67,14 @@ function coverPage(options = {}) {
       if (selector.startsWith('.cover-plugin-preview .default[style')) return preview;
       if (selector === 'input[data-rednote-cover-input="true"]') return !inputRemoved && input.attributes['data-rednote-cover-input'] ? input : null;
       if (selector === '[data-rednote-cover-dialog="true"]') return dialog.attributes['data-rednote-cover-dialog'] ? dialog : null;
+      if (selector === '.cover-plugin-preview .cover-edit-entry') return entry;
       throw new Error(`Unexpected document selector ${selector}`);
     },
     querySelectorAll(selector) {
       if (selector === '.cover-plugin-preview img') return [{ src: 'data:image/png;base64,decorative' }];
       if (selector.startsWith('[data-steward-cover-preview]')) return all;
       if (selector === '.cover-plugin-preview .default, [class*="cover-preview"]') return [preview];
-      if (selector === '.cover-plugin-preview .cover-edit-entry') return [{}];
+      if (selector === '.cover-plugin-preview .cover-edit-entry') return [entry];
       if (selector.startsWith('[role="dialog"]')) return options.ambiguous ? [dialog, otherDialog] : [wrapper, dialog];
       // There is a real enabled save button outside the dialog. It must never be used.
       if (selector === 'button, [role="button"]') return [outside, button];
@@ -69,21 +83,19 @@ function coverPage(options = {}) {
   };
   const page = {
     evaluate: async source => {
-      const result = vm.runInNewContext(`(${source})`, { document });
+      const result = vm.runInNewContext(`(${source})`, {
+        document,
+        window: {},
+        MouseEvent: class {
+          constructor(type, options) { this.type = type; this.options = options; }
+        },
+      });
       return typeof result === 'function' ? result() : result;
     },
     hover: async (selector, options) => {
       assert.equal(selector, '[data-steward-cover-preview="true"]');
       assert.deepEqual(options, { nth: 0, firstOnMulti: false });
       observed.hovered = true;
-    },
-    click: async (selector, options) => {
-      assert.equal(selector, '.cover-plugin-preview .cover-edit-entry');
-      assert.deepEqual(options, { nth: 0, firstOnMulti: false });
-      assert.equal(observed.hovered, true);
-      observed.entryClicks++;
-      opened = true;
-      return { clicked: true, target: selector, matches_n: 1, match_level: 'exact' };
     },
     setFileInput: async (files, selector) => {
       observed.uploads++;
@@ -101,10 +113,6 @@ function coverPage(options = {}) {
     // A pending state is enough to test rejection without a real 30-second wait.
     wait: async (waitOptions = {}) => {
       if (waitOptions.time === 1) return;
-      if (options.delayedClose && observed.delayedCloses > 0 && !closed) {
-        closed = true;
-        return;
-      }
       throw new Error('Cover UI remains pending');
     },
   };
@@ -114,7 +122,7 @@ function coverPage(options = {}) {
 test('cover selection uses the active dialog, decodes CSS URLs and defers persisted identity verification', async () => {
   const { page, observed } = coverPage();
   const result = await applyCover(page, '/synthetic/cover.png');
-  assert.deepEqual(observed, { uploads: 1, confirmations: 1, outsideClicks: 0, hovered: true, delayedCloses: 0, entryClicks: 1 });
+  assert.deepEqual(observed, { uploads: 1, confirmations: 1, outsideClicks: 0, hovered: true, entryActivations: 5 });
   assert.equal(result.filename, 'cover.png');
   assert.equal(result.previousSource, 'https://example.invalid/before.jpg?token=old');
   assert.equal(result.source, 'https://example.invalid/selected.jpg?token=new');
@@ -139,12 +147,11 @@ test('cover selection succeeds after the platform removes the replaced file inpu
   assert.equal(result.fileSelectionEvidence, 'attachment-acknowledged-and-fresh-thumbnail');
 });
 
-test('cover confirmation tolerates a delayed modal close after the selected preview appears', async () => {
+test('cover confirmation succeeds even when the creator retains a hidden modal node', async () => {
   const { page, observed } = coverPage({ delayedClose: true });
   const result = await applyCover(page, '/synthetic/cover.png');
   assert.equal(observed.uploads, 1);
   assert.equal(observed.confirmations, 1);
-  assert.equal(observed.delayedCloses, 1);
   assert.equal(result.selectionVerified, true);
   assert.equal(result.source, 'https://example.invalid/selected.jpg?token=new');
 });

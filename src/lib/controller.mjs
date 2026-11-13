@@ -147,7 +147,8 @@ export function compareReadback(task, row, publication = null, coverContentEvide
   const contentCoverMatched = Boolean(task.cover && coverContentEvidence?.comparison?.matched === true
     && coverContentEvidence.taskId === task.id && coverContentEvidence.fingerprint === task.fingerprint
     && coverContentEvidence.accountUserId === task.account_user_id && coverContentEvidence.noteId === row?.noteId
-    && coverContentEvidence.local?.sha256 === task.cover.sha256 && coverContentEvidence.platform?.url === row?.cover?.url);
+    && coverContentEvidence.local?.sha256 === task.cover.sha256
+    && videoSourceIdentity(coverContentEvidence.platform?.url) === videoSourceIdentity(row?.cover?.url));
   if (task.cover && coverContentEvidence) checks.customCover = contentCoverMatched;
   return {
     matched: Object.values(checks).every(Boolean), checks,

@@ -38,6 +38,8 @@ test('cover receipts cannot cross task, fingerprint, account, note or current co
   }
   await fs.writeFile(f.file, JSON.stringify(evidence));
   await assert.rejects(verifyCoverEvidence(f.file, f.task, { ...f.row, cover: { url: 'https://sns.xhscdn.com/other.png' } }), /does not bind/);
+  const renewedSignature = { ...f.row, cover: { url: 'https://sns.xhscdn.com/cover.png?sign=renewed&t=next' } };
+  assert.equal((await verifyCoverEvidence(f.file, f.task, renewedSignature)).comparison.matched, true);
   await fs.appendFile(f.platform, 'modified');
   await assert.rejects(verifyCoverEvidence(f.file, f.task, f.row), /bytes changed/);
 });
@@ -52,12 +54,50 @@ test('reported matching text cannot override independently recomputed image diff
   await assert.rejects(verifyCoverEvidence(f.file, f.task, f.row, { compare }), /no longer matches/);
 });
 
-test('image comparison keeps decoder failures and different aspect ratios unresolved', async () => {
+test('image comparison keeps decoder failures and unsupported transformed images unresolved', async () => {
   const unavailable = await compareCoverImages(Buffer.from('a'), Buffer.from('b'), { runner: async () => { throw new Error('tool unavailable'); } });
   assert.equal(unavailable.matched, false); assert.equal(unavailable.reason, 'comparison-unavailable');
   let probes = 0;
   const changed = await compareCoverImages(Buffer.from('a'), Buffer.from('b'), { runner: async () => ({ stdout: JSON.stringify({ streams: [{ width: probes++ ? 100 : 200, height: 100 }] }) }) });
-  assert.equal(changed.matched, false); assert.equal(changed.reason, 'aspect-ratio-differs');
+  assert.equal(changed.matched, false);
+});
+
+test('image comparison accepts one high-scoring platform 4:3 crop', async () => {
+  let probes = 0;
+  const runner = async (command, args) => {
+    if (command === 'ffprobe') {
+      const approved = args.at(-1).endsWith('/approved');
+      const dimensions = approved ? { width: 1280, height: 720 } : { width: 1192, height: 894 };
+      probes++;
+      return { stdout: JSON.stringify({ streams: [dimensions] }) };
+    }
+    const filter = args[args.indexOf('-filter_complex') + 1];
+    const score = filter.includes('crop=960:720:0:0') ? '0.991' : '0.900';
+    return { stderr: `[Parsed_ssim_4] SSIM Y:0.990 U:0.990 V:0.990 All:${score}` };
+  };
+  const result = await compareCoverImages(Buffer.from('a'), Buffer.from('b'), { runner });
+  assert.equal(result.method, 'image-ssim-platform-crop');
+  assert.equal(result.cropAlignment, 'left');
+  assert.equal(result.score, 0.991);
+  assert.equal(result.matched, true);
+});
+
+test('image comparison rejects ambiguous or low-scoring platform crops', async () => {
+  for (const [score, reason] of [[0.990, 'crop-alignment-ambiguous'], [0.85, undefined]]) {
+    let probes = 0;
+    const runner = async (command, args) => {
+      if (command === 'ffprobe') {
+        const approved = args.at(-1).endsWith('/approved');
+        const dimensions = approved ? { width: 1280, height: 720 } : { width: 1192, height: 894 };
+        probes++;
+        return { stdout: JSON.stringify({ streams: [dimensions] }) };
+      }
+      return { stderr: `[Parsed_ssim_4] SSIM Y:0.9 U:0.9 V:0.9 All:${score}` };
+    };
+    const result = await compareCoverImages(Buffer.from('a'), Buffer.from('b'), { runner });
+    assert.equal(result.matched, false);
+    if (reason) assert.equal(result.reason, reason);
+  }
 });
 
 test('bound browser cover hashing limits its destination and verifies the observed bytes', async () => {

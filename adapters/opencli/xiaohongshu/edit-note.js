@@ -98,9 +98,11 @@ cli({
         preCoverSource,
       };
     }
-    await fillTitle(page, title);
-    await fillBody(page, content);
-    await replaceTopics(page, topics);
+    if (before.title !== title) await fillTitle(page, title);
+    if (normalizeForComparison(before.body) !== normalizeForComparison(content)) {
+      await fillBody(page, content);
+    }
+    if (!sameTopics(before.topics, topics)) await replaceTopics(page, topics);
     await replaceImages(page, images);
     const declarations = await applyDeclarations(page, desiredDeclarations);
 
@@ -173,9 +175,11 @@ cli({
         ...(await applyCover(page, cover[0], { previewTimeoutMs: coverTimeoutSeconds * 1000 })),
         preCoverSource,
       };
-      await fillTitle(page, title);
-      await fillBody(page, content);
-      await replaceTopics(page, topics);
+      if (videoSaved.title !== title) await fillTitle(page, title);
+      if (normalizeForComparison(videoSaved.body) !== normalizeForComparison(content)) {
+        await fillBody(page, content);
+      }
+      if (!sameTopics(videoSaved.topics, topics)) await replaceTopics(page, topics);
       await applyDeclarations(page, desiredDeclarations);
       const coverPrepared = await readEditor(page);
       if (!coverPrepared || coverPrepared.title !== title

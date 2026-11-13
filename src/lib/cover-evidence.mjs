@@ -4,10 +4,12 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { sha256 } from './package.mjs';
+import { videoSourceIdentity } from './media.mjs';
 
 const exec = promisify(execFile);
 const MAX_BYTES = 20 * 1024 * 1024;
 const THRESHOLD = 0.995;
+const CROP_THRESHOLD = 0.90;
 
 async function readImage(file) {
   const stat = await fs.stat(file);
@@ -30,15 +32,53 @@ export async function compareCoverImages(local, platform, { runner = exec } = {}
       return stream.width / stream.height;
     };
     const [a, b] = await Promise.all([dimensions(left), dimensions(right)]);
-    if (Math.abs(a - b) / a > 0.01) return { method: 'image-ssim', threshold: THRESHOLD, score: null, matched: false, reason: 'aspect-ratio-differs' };
     const normalize = 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2,format=yuv444p,setpts=PTS-STARTPTS';
-    const { stderr } = await runner('ffmpeg', ['-hide_banner', '-nostats', '-i', left, '-i', right,
-      '-filter_complex', `[0:v]${normalize}[a];[1:v]${normalize}[b];[a][b]ssim`, '-frames:v', '1', '-an', '-f', 'null', '-'],
-    { timeout: 30_000, maxBuffer: 1024 * 1024 });
-    const value = [...stderr.matchAll(/SSIM[^\r\n]*\bAll:([0-9.]+)/g)].at(-1)?.[1];
-    const score = value == null ? null : Number(value);
-    return { method: 'image-ssim', threshold: THRESHOLD, score: Number.isFinite(score) ? score : null,
-      matched: Number.isFinite(score) && score >= THRESHOLD && score <= 1 };
+    const compare = async (filterComplex) => {
+      const { stderr } = await runner('ffmpeg', ['-hide_banner', '-nostats', '-i', left, '-i', right,
+        '-filter_complex', filterComplex, '-frames:v', '1', '-an', '-f', 'null', '-'],
+      { timeout: 30_000, maxBuffer: 1024 * 1024 });
+      const value = [...stderr.matchAll(/SSIM[^\r\n]*\bAll:([0-9.]+)/g)].at(-1)?.[1];
+      const score = value == null ? null : Number(value);
+      return Number.isFinite(score) && score <= 1 ? score : null;
+    };
+    if (Math.abs(a - b) / a <= 0.01) {
+      const score = await compare(`[0:v]${normalize}[a];[1:v]${normalize}[b];[a][b]ssim`);
+      return { method: 'image-ssim', threshold: THRESHOLD, score,
+        matched: score != null && score >= THRESHOLD };
+    }
+    // The video editor can display a wider approved frame with a 4:3 cover
+    // crop. Compare both possible full-height crops to the saved 4:3 image,
+    // then require a high score from the unique best crop. A different image,
+    // decoder failure or ambiguous near-tie remains unresolved.
+    const scores = [];
+    for (const align of ['left', 'center', 'right']) {
+      // Pixel dimensions are exact and avoid `mdar`, which older ffmpeg builds
+      // may not expose in crop expressions.
+      const dimensions = async file => {
+        const { stdout } = await runner('ffprobe', ['-v', 'error', '-select_streams', 'v:0',
+          '-show_entries', 'stream=width,height', '-of', 'json', file],
+        { timeout: 30_000, maxBuffer: 1024 * 1024 });
+        return JSON.parse(stdout).streams?.[0];
+      };
+      const baseDimensions = await dimensions(left);
+      const cropHeight = Number(baseDimensions?.height);
+      const cropWidth = Math.min(
+        Number(baseDimensions?.width),
+        Math.round(cropHeight * b),
+      );
+      const maxX = Math.max(0, Number(baseDimensions?.width) - cropWidth);
+      const x = align === 'left' ? 0 : align === 'center' ? Math.round(maxX / 2) : maxX;
+      const filter = `crop=${cropWidth}:${cropHeight}:${x}:0`;
+      const score = await compare(`[0:v]${filter},${normalize}[a];[1:v]${normalize}[b];[a][b]ssim`);
+      if (score != null) scores.push({ align, score });
+    }
+    scores.sort((x, y) => y.score - x.score);
+    const best = scores[0] ?? null;
+    const ambiguous = scores.length > 1 && best.score - scores[1].score < 0.005;
+    return { method: 'image-ssim-platform-crop', threshold: CROP_THRESHOLD,
+      score: best?.score ?? null, matched: Boolean(best && best.score >= CROP_THRESHOLD && !ambiguous),
+      ...(best ? { cropAlignment: best.align } : {}),
+      ...(ambiguous ? { reason: 'crop-alignment-ambiguous' } : {}) };
   } catch { return { method: 'image-ssim', threshold: THRESHOLD, score: null, matched: false, reason: 'comparison-unavailable' }; }
   finally { await fs.rm(dir, { recursive: true, force: true }); }
 }
@@ -63,10 +103,12 @@ export async function verifyCoverEvidence(file, task, row, dependencies) {
   const previous = JSON.parse(await fs.readFile(file, 'utf8'));
   if (previous.schemaVersion !== 1 || previous.kind !== 'rednote_cover_content_evidence' || previous.taskId !== task.id ||
       previous.fingerprint !== task.fingerprint || previous.accountUserId !== task.account_user_id || previous.noteId !== row.noteId ||
-      previous.local?.path !== task.cover?.path || previous.local?.sha256 !== task.cover?.sha256 || previous.platform?.url !== row.cover?.url ||
+      previous.local?.path !== task.cover?.path || previous.local?.sha256 !== task.cover?.sha256 ||
+      videoSourceIdentity(previous.platform?.url) !== videoSourceIdentity(row.cover?.url) ||
       !Number.isFinite(Date.parse(previous.readAt)) || Date.parse(previous.readAt) > Date.now() || !previous.platform?.path ||
       !/^[a-f0-9]{64}$/.test(previous.platform?.sha256 ?? '') || !previous.comparison ||
-      !['sha256', 'image-ssim'].includes(previous.comparison.method) || typeof previous.comparison.matched !== 'boolean') {
+      !['sha256', 'image-ssim', 'image-ssim-platform-crop'].includes(previous.comparison.method) ||
+      typeof previous.comparison.matched !== 'boolean') {
     throw new Error('Cover evidence does not bind this frozen account task and current note');
   }
   const local = await readImage(task.cover.path);

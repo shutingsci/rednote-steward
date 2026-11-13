@@ -280,6 +280,10 @@ async function focusBodyEnd(page) {
 async function addTopic(page, topic) {
   await focusBodyEnd(page);
   await page.pressKey('Enter');
+  // Let Tiptap commit the new paragraph before opening the React picker.
+  // Opening both in the same event loop turn intermittently yields an empty
+  // candidate list.
+  await page.wait({ time: 0.3 });
   const picker = await page.evaluate(
     `(() => {
       const candidates = Array.from(document.querySelectorAll('button'));
@@ -298,8 +302,9 @@ async function addTopic(page, topic) {
     throw new CommandExecutionError('Native text insertion is unavailable in this Browser Bridge version');
   }
   await page.insertText(topic);
+  await page.wait({ time: 0.8 });
   let choice = null;
-  const deadline = Date.now() + 10000;
+  const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     choice = await page.evaluate(
       `(wanted => {
@@ -312,7 +317,8 @@ async function addTopic(page, topic) {
           return (name?.textContent || item.textContent || '').trim();
         });
         const index = labels.findIndex((label) => norm(label) === norm(wanted));
-        return { ok: index >= 0, index, items: labels.slice(0, 12) };
+        if (index >= 0) items[index].click();
+        return { ok: index >= 0, index, selected: index >= 0, items: labels.slice(0, 12) };
       })(${JSON.stringify(topic)})`,
     );
     if (choice?.ok) break;
@@ -323,10 +329,6 @@ async function addTopic(page, topic) {
       `Topic "${topic}" was not found exactly. Visible suggestions: ${(choice?.items || []).join(' | ') || 'none'}`,
     );
   }
-  await page.click(
-    `#creator-editor-topic-container .item`,
-    { nth: choice.index, firstOnMulti: false },
-  );
   await page.wait({ time: 0.6 });
 }
 

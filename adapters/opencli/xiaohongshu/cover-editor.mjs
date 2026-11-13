@@ -8,6 +8,27 @@ const entryVisibilityScript = selector => `(() => {
   return { count: entries.length, visible };
 })()`;
 
+function activateCoverEntryScript() {
+  return `(selector => {
+    const entry = document.querySelector(selector);
+    if (!entry) return { clicked: false, reason: 'missing-entry' };
+    const target = entry.querySelector('.cover-edit-entry-text') || entry;
+    const rect = target.getBoundingClientRect();
+    const options = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      button: 0,
+      clientX: rect.left + Math.max(1, rect.width / 2),
+      clientY: rect.top + Math.max(1, rect.height / 2),
+    };
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      target.dispatchEvent(new MouseEvent(type, options));
+    }
+    return { clicked: true, target: 'cover-edit-entry' };
+  })(${JSON.stringify('.cover-plugin-preview .cover-edit-entry')})`;
+}
+
 export async function attachFiles(page, files, selector) {
   if (typeof page.setFileInput !== 'function') throw new CommandExecutionError('Update OpenCLI Browser Bridge: local file upload is unavailable');
   // No retry after an ambiguous CDP upload. The controller retains the attempt.
@@ -72,9 +93,9 @@ export async function applyCover(page, cover, { previewTimeoutMs = 120_000 } = {
     return '[data-steward-cover-preview="true"]';
   }`);
   if (!previewSelector) throw new CommandExecutionError('The custom cover preview is unavailable; the cover stage remains unsubmitted');
-  // Keep hover and click on one resolved element. Re-resolving the entry can
-  // lose the hover-only visible state, producing a successful click on a
-  // hidden node without opening the editor.
+  // Keep hover and activation on the primary cover. The creator page listens
+  // for a Vue pointer sequence; a CDP click can acknowledge the node while the
+  // application handler remains dormant.
   const editEntry = await page.evaluate(entryVisibilityScript('.cover-plugin-preview .cover-edit-entry'));
   if (!editEntry || editEntry.count !== 1) {
     throw new CommandExecutionError('The custom cover control is unavailable; the cover stage remains unsubmitted');
@@ -90,7 +111,7 @@ export async function applyCover(page, cover, { previewTimeoutMs = 120_000 } = {
   if (!refreshedEntry || refreshedEntry.count !== 1 || refreshedEntry.visible?.[0] !== true) {
     throw new CommandExecutionError('The custom cover control is unavailable; the cover stage remains unsubmitted');
   }
-  const opened = await page.click('.cover-plugin-preview .cover-edit-entry', { nth: 0, firstOnMulti: false });
+  const opened = await page.evaluate(activateCoverEntryScript());
   if (!opened?.clicked) throw new CommandExecutionError('The custom cover control is unavailable; the cover stage remains unsubmitted');
   await waitFor(page, async () => Boolean(await page.evaluate(`() => {
     const dialogs = Array.from(document.querySelectorAll(${JSON.stringify(DIALOG_SELECTOR)}))
@@ -123,18 +144,16 @@ export async function applyCover(page, cover, { previewTimeoutMs = 120_000 } = {
   if (!selected?.confirmationClicked || selected.filename !== filename) {
     throw new CommandExecutionError('Custom cover selection could not be confirmed; the cover stage remains unsubmitted');
   }
-  // The confirmation control may acknowledge the click before the modal
-  // finishes closing. Poll for a bounded interval so a slow close does not
-  // turn an unsubmitted composer into an ambiguous publish result.
-  await waitFor(page, async () => Boolean(await page.evaluate(`() => {
-    const dialog = document.querySelector(${JSON.stringify(ACTIVE_DIALOG_SELECTOR)});
-    return !dialog || dialog.offsetParent === null;
-  }`)), 30_000, 400, 'cover confirmation');
+  // The creator app may retain an invisible modal node after confirmation.
+  // The changed main-cover resource is the observable completion signal.
   let after = before;
   await waitFor(page, async () => {
     after = await page.evaluate(previewSourceScript);
     return Boolean(after && after !== before);
-  }, 15_000, 400, 'updated cover preview');
+  }, 30_000, 400, 'updated cover preview');
+  // Let the cover overlay release pointer/focus despite retaining its DOM
+  // node. The composer's following topic picker must receive focus.
+  await page.wait({ time: 1 });
   return {
     ...selected,
     previousSource: before,

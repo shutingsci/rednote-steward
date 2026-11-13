@@ -362,6 +362,21 @@ function stagedVideoEditor({ savedVideo = 'changed', savedCover = 'changed', thr
     observed.coverConfirmations++; dialogOpen = false;
     composer.cover = 'https://example.invalid/selected-cover.jpg?preview=1';
   } });
+  const entryText = attrs({
+    getBoundingClientRect: () => ({ left: 10, top: 20, width: 80, height: 30 }),
+    dispatchEvent: () => {
+      dialogOpen = true;
+      thumbnails = [{ src: composer.cover, complete: true, naturalWidth: 100 }];
+    },
+  });
+  const coverEntry = attrs({
+    querySelector: selector => selector === '.cover-edit-entry-text' ? entryText : null,
+    getBoundingClientRect: () => ({ left: 10, top: 20, width: 80, height: 30 }),
+    dispatchEvent: () => {
+      dialogOpen = true;
+      thumbnails = [{ src: composer.cover, complete: true, naturalWidth: 100 }];
+    },
+  });
   const dialog = attrs({ get offsetParent() { return dialogOpen ? {} : null; },
     contains: el => el === coverInput,
     querySelectorAll(selector) {
@@ -388,7 +403,7 @@ function stagedVideoEditor({ savedVideo = 'changed', savedCover = 'changed', thr
     }
     location.href = 'https://creator.xiaohongshu.com/publish/editSuccess';
   } });
-  const all = [title, body, preview, videoInput, coverInput, complete, dialog, host];
+  const all = [title, body, preview, videoInput, coverInput, complete, dialog, host, coverEntry];
   const document = {
     body: { innerText: '' },
     querySelectorAll(selector) {
@@ -398,7 +413,7 @@ function stagedVideoEditor({ savedVideo = 'changed', savedCover = 'changed', thr
       if (selector === '.img-container' || selector === '.cover-plugin-preview img') return [];
       if (selector.startsWith('[data-steward-cover-preview]')) return all;
       if (selector === '.cover-plugin-preview .default, [class*="cover-preview"]') return [preview];
-      if (selector === '.cover-plugin-preview .cover-edit-entry') return [{}];
+      if (selector === '.cover-plugin-preview .cover-edit-entry') return [coverEntry];
       if (selector.startsWith('[role="dialog"]')) return [dialog];
       if (selector === 'xhs-publish-btn') return [host];
       throw new Error(`Unexpected document list selector ${selector}`);
@@ -411,23 +426,23 @@ function stagedVideoEditor({ savedVideo = 'changed', savedCover = 'changed', thr
       if (selector.startsWith('.cover-plugin-preview .default[style')) return preview;
       if (selector === 'input[data-rednote-cover-input="true"]') return coverInput.attributes['data-rednote-cover-input'] ? coverInput : null;
       if (selector === '[data-rednote-cover-dialog="true"]') return dialog.attributes['data-rednote-cover-dialog'] ? dialog : null;
+      if (selector === '.cover-plugin-preview .cover-edit-entry') return coverEntry;
       throw new Error(`Unexpected document selector ${selector}`);
     },
   };
   const page = {
     goto: async url => { observed.opens.push(url); location.href = url; composer = { ...persisted }; },
-    evaluate: async source => evaluate(source, { document, location }),
+    evaluate: async source => evaluate(source, {
+      document,
+      location,
+      window: {},
+      MouseEvent: class {
+        constructor(type, options) { this.type = type; this.options = options; }
+      },
+    }),
     fillText: async (selector, value) => { composer[selector.includes('placeholder') ? 'title' : 'body'] = value;
       return { filled: true, verified: true, actual: value }; },
     hover: async () => {},
-    click: async selector => {
-      if (selector === '.cover-plugin-preview .cover-edit-entry') {
-        dialogOpen = true;
-        thumbnails = [{ src: composer.cover, complete: true, naturalWidth: 100 }];
-        return { clicked: true, target: selector, matches_n: 1, match_level: 'exact' };
-      }
-      return { clicked: true, target: selector };
-    },
     setFileInput: async (files, selector) => {
       const stat = await fs.stat(files[0]);
       const file = { name: path.basename(files[0]), size: stat.size };
