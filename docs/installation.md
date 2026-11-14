@@ -13,7 +13,7 @@ and use Software Center for updates and removal. Source tags bind immutable OCI
 versions. Local checkouts are explicit developer overrides; the Software Center
 never downloads a Git branch as a released version.
 
-## Existing standalone GitHub installations
+## macOS installation and updates
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gaofeng21cn/rednote-steward/main/install.sh | bash
@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/gaofeng21cn/rednote-steward/main/in
 
 The script installs the current `latest-stable` OCI Package into your user directory. Standalone and Software Center installations select the same version and source commit. It installs dependencies, adds command wrappers, prepares Browser Bridge, installs the generic Codex Skill, and registers the MCP Server when Codex CLI is available. Node.js 24+ is required; the installer can use an existing Homebrew installation when Node needs installing.
 
-Current and versioned installs verify the OCI manifest, source layer, and payload digests before selecting the package. The original v0.1.0 and v0.2.3 releases retain their historical download routes. The manifest records the source revision and digest of public installation inputs. A local `--source` install generates the same manifest with its actual revision and dirty state. Explicit installation of the original `v0.1.0` retains its older source-archive route.
+Current and versioned installs verify the OCI manifest, source layer and payload file digests. The installation manifest records the selected product version and source commit. Versioned installs accept versions published in the same OCI repository; source tags retain the history of older versions. A local `--source` install records its actual revision and dirty state.
 
 The installed commands are:
 
@@ -129,7 +129,7 @@ Install a specific published version:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gaofeng21cn/rednote-steward/main/install.sh \
-  | bash -s -- --version v0.2.3
+  | bash -s -- --version v0.2.6
 ```
 
 Run the packaged uninstaller to remove managed installation files and integrations:
@@ -151,8 +151,8 @@ The stable Package ID is `rednote-steward`; the display name is **RedNote
 Steward**. Its description and localized presentation live in `opl-package.json`.
 The repository marketplace declares `rednote-steward@rednote-steward`. OPL uses
 the pinned source payload and Codex native plugin manager for installation,
-update, enable/disable and removal. Preview channel eligibility is separate from
-account login and verified publishing capabilities.
+update, enable/disable and removal. Released Package identity is verified independently of
+account login and publishing capabilities.
 
 The plugin contains the runtime, MCP definition and package lock. Its shared
 launcher prepares dependencies with `npm ci --ignore-scripts` inside the plugin
@@ -184,16 +184,12 @@ npm test
 
 To try changes that have reached `main` before a versioned release, install
 the checkout explicitly with `bash install.sh --source "$PWD"`. The public
-one-command installer continues to select its pinned release tag.
+one-command installer selects the verified OCI `latest-stable` version.
 
 For an isolated installer check, use its `--source PATH`, `--skip-browser-setup`, and `--skip-integrations` options with separate installation, binary, and state directories. Production browser sessions are unnecessary for this check.
 
-## Build a versioned release
+## Stable release
 
-Start from the committed source with the package lock and tests current, then use an output directory outside the checkout:
+OPL Package Publisher checks delivery changes on `main` daily. It prepares one product version, runs the owner tests and package check, binds an annotated source tag and publishes the immutable OCI version. `latest-stable` advances after publication verification. Software Center and the macOS installer consume that same version and source commit.
 
-```bash
-npm run pack:release -- --out /absolute/path/to/release-output
-```
-
-The command creates the versioned installation archive, release manifest and `SHA256SUMS`. It rejects a dirty source tree or an attempt to replace an existing artifact with different bytes. Upload those exact files to the matching GitHub release. Source tests, archive validation, isolated installation and live account capability qualification are distinct evidence; publishing an archive does not make untested browser operations supported.
+GitHub source tags retain code history. The repository has no separate GitHub Release download channel. A CI package archive is a validation artifact; user installations use OCI.

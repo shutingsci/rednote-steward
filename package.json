@@ -47,8 +47,7 @@
     "mcp": "node src/mcp.mjs",
     "lock:package": "node scripts/package-lock.mjs --write",
     "manifest": "node scripts/release-manifest.mjs",
-    "check:manifest": "node scripts/release-manifest.mjs --check",
-    "pack:release": "node scripts/package-release.mjs"
+    "check:manifest": "node scripts/release-manifest.mjs --check"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

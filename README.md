@@ -63,8 +63,9 @@ Its CLI and MCP entries share the same controller, installed identity, and user
 state. Node.js 24+ and the browser connection remain runtime requirements.
 Development checkouts are explicit overrides, not software-center releases.
 
-The standalone installer below maintains existing native installations. Its
-historical archive versions remain separate from the current OPL Package release.
+The macOS installer below reads the same OCI stable version and source commit.
+Choose Software Center or the standalone command for installation and updates.
+Both provide the same CLI, MCP Server and assistant Skill.
 
 ## Install on macOS
 
@@ -154,7 +155,7 @@ Use the installed executable's absolute path when your client does not inherit t
 
 The local browser workflow targets macOS and logged-in Chrome through the pinned OpenCLI/Browser Bridge combination. Image publishing, existing-post maintenance, account reads, and inventory build on the original workflow. Video and custom-cover support are included in the adapter. Tests exercise control flow; live media acceptance is recorded separately for the relevant account and environment. Platform changes may require adapter updates.
 
-The CLI, standard MCP Server and assistant Skill share the same task owner. The OPL/Codex plugin includes the CLI, MCP server, locked runtime dependencies and read-only shared views for task lists, exact content differences, frozen media and platform readback. OPL manages its installed plugin identity and lifecycle; the existing native application remains a separate carrier. The source plugin is offered as a preview while its protected publication channel remains development-only; this does not erase the existing native v0.2.3 release. Use `xhs-ops review TASK_ID` or `task_review` in clients without a shared UI. Content generation and automatic photo enhancement are performed by the tools you choose; Steward manages their prepared outputs and publication records.
+The CLI, standard MCP Server and assistant Skill share one controller and released version. The OPL/Codex plugin includes the same runtime, locked dependencies and read-only views for tasks, exact content differences, frozen media and platform readback. Software Center and the standalone installer select the verified OCI stable release. Source tags retain version history; installation and updates use the same published Package. Use `xhs-ops review TASK_ID` or `task_review` in clients without a shared UI. Your chosen tools produce content and enhance photos; Steward manages their prepared outputs and publication records.
 
 ## Documentation and Development
 

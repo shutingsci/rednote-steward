@@ -220,7 +220,6 @@
       "scripts/install-local.mjs",
       "scripts/lib/npm-pack-output.mjs",
       "scripts/package-lock.mjs",
-      "scripts/package-release.mjs",
       "scripts/release-manifest.mjs",
       "scripts/run-plugin.mjs",
       "scripts/uninstall.mjs",
@@ -253,7 +252,7 @@
       "src/opencli-runner.mjs",
       "src/setup.mjs"
     ],
-    "digest": "sha256:87e82524eebf4f16515fa5f3588bf514cf26b101e89d805a27199cf5a74ddbc7"
+    "digest": "sha256:be11f743ea8e226cc2087ce143483084411d7b4d9fd9e56b67bb3003bcad2384"
   },
   "description": "Prepare, review and manage Xiaohongshu publications through one local CLI and MCP service.",
   "presentation": {
